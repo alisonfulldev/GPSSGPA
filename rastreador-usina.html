@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rastreador Usina</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --verde-campo: #2d5a1b;
+    --verde-claro: #4a8c2a;
+    --amarelo-trator: #f5c518;
+    --laranja: #e8820c;
+    --cinza-escuro: #1a1a1a;
+    --cinza-painel: #252525;
+    --cinza-card: #2e2e2e;
+    --cinza-borda: #3a3a3a;
+    --texto: #f0ede8;
+    --texto-suave: #9a9a8a;
+    --fonte-ui: 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--fonte-ui);
+    background: var(--cinza-escuro);
+    color: var(--texto);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--cinza-painel);
+    border-bottom: 2px solid var(--verde-campo);
+    padding: 0 16px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 12px;
+    z-index: 100;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--verde-campo);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--texto);
+  }
+
+  .header-title span {
+    color: var(--amarelo-trator);
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+  }
+
+  .status-pill.aguardando {
+    background: rgba(255,255,255,0.06);
+    border-color: var(--cinza-borda);
+    color: var(--texto-suave);
+  }
+
+  .status-pill.localizando {
+    background: rgba(245,197,24,0.12);
+    border-color: rgba(245,197,24,0.3);
+    color: var(--amarelo-trator);
+  }
+
+  .status-pill.ativo {
+    background: rgba(74,140,42,0.15);
+    border-color: rgba(74,140,42,0.4);
+    color: #6fcf4a;
+  }
+
+  .status-pill.erro {
+    background: rgba(220,60,60,0.12);
+    border-color: rgba(220,60,60,0.3);
+    color: #ff6b6b;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .dot.pulse {
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* LAYOUT PRINCIPAL */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* PAINÉIS */
+  .painel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .painel-sgpa { border-right: 3px solid var(--verde-campo); }
+
+  .painel-label {
+    background: var(--cinza-painel);
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--cinza-borda);
+    flex-shrink: 0;
+  }
+
+  .painel-label .badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-sgpa {
+    background: rgba(245,197,24,0.15);
+    color: var(--amarelo-trator);
+    border: 1px solid rgba(245,197,24,0.25);
+  }
+
+  .badge-gps {
+    background: rgba(74,140,42,0.15);
+    color: #6fcf4a;
+    border: 1px solid rgba(74,140,42,0.3);
+  }
+
+  /* SGPA IFRAME */
+  #sgpa-container {
+    flex: 1;
+    position: relative;
+    background: var(--cinza-card);
+    display: flex;
+    flex-direction: column;
+  }
+
+  #sgpa-frame {
+    flex: 1;
+    border: none;
+    width: 100%;
+    display: none;
+  }
+
+  /* CONFIGURAÇÃO SGPA */
+  #sgpa-config {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px;
+    gap: 16px;
+  }
+
+  .config-icon {
+    font-size: 44px;
+    line-height: 1;
+    opacity: 0.6;
+  }
+
+  .config-titulo {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--texto);
+    text-align: center;
+  }
+
+  .config-sub {
+    font-size: 12px;
+    color: var(--texto-suave);
+    text-align: center;
+    line-height: 1.6;
+    max-width: 260px;
+  }
+
+  .url-input-wrap {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .url-input-wrap label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--texto-suave);
+  }
+
+  .url-input-wrap input {
+    background: var(--cinza-escuro);
+    border: 1.5px solid var(--cinza-borda);
+    border-radius: 8px;
+    color: var(--texto);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    font-family: 'Courier New', monospace;
+    transition: border-color 0.2s;
+  }
+
+  .url-input-wrap input:focus {
+    border-color: var(--verde-claro);
+  }
+
+  .url-input-wrap input::placeholder {
+    color: var(--texto-suave);
+    font-size: 11px;
+    font-family: var(--fonte-ui);
+  }
+
+  .btn-carregar {
+    background: var(--verde-campo);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.2s, transform 0.1s;
+    align-self: flex-start;
+  }
+
+  .btn-carregar:hover { background: var(--verde-claro); }
+  .btn-carregar:active { transform: scale(0.97); }
+
+  .aviso-iframe {
+    font-size: 11px;
+    color: var(--texto-suave);
+    line-height: 1.5;
+    max-width: 300px;
+    background: rgba(245,197,24,0.06);
+    border: 1px solid rgba(245,197,24,0.15);
+    border-radius: 6px;
+    padding: 8px 12px;
+  }
+
+  /* MAPA GPS */
+  #mapa {
+    flex: 1;
+    width: 100%;
+  }
+
+  /* PAINEL INFO GPS */
+  .gps-info {
+    background: var(--cinza-painel);
+    border-top: 1px solid var(--cinza-borda);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+
+  .gps-dado {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .gps-dado-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--texto-suave);
+  }
+
+  .gps-dado-valor {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--texto);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gps-dado-valor.destaque { color: var(--amarelo-trator); }
+
+  .gps-sep {
+    width: 1px;
+    height: 24px;
+    background: var(--cinza-borda);
+    flex-shrink: 0;
+  }
+
+  /* BTN GPS */
+  .btn-gps {
+    margin-left: auto;
+    background: var(--verde-campo);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .btn-gps:hover { background: var(--verde-claro); }
+  .btn-gps.seguindo {
+    background: rgba(74,140,42,0.2);
+    border: 1px solid rgba(74,140,42,0.5);
+    color: #6fcf4a;
+  }
+
+  /* DIVISOR REDIMENSIONÁVEL */
+  .divisor {
+    width: 3px;
+    background: var(--verde-campo);
+    cursor: col-resize;
+    flex-shrink: 0;
+    transition: background 0.15s;
+    position: relative;
+    z-index: 10;
+  }
+
+  .divisor:hover, .divisor.arrastando { background: var(--verde-claro); }
+
+  /* TELA MOBILE - ABAS */
+  .abas {
+    display: none;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 640px) {
+    .abas {
+      display: flex;
+      background: var(--cinza-painel);
+      border-bottom: 2px solid var(--verde-campo);
+    }
+
+    .aba {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: transparent;
+      color: var(--texto-suave);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.2s, background 0.2s;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+    }
+
+    .aba.ativa {
+      color: var(--amarelo-trator);
+      border-bottom-color: var(--amarelo-trator);
+      background: rgba(245,197,24,0.06);
+    }
+
+    .main {
+      flex-direction: column;
+    }
+
+    .divisor { display: none; }
+
+    .painel {
+      display: none;
+    }
+
+    .painel.visivel {
+      display: flex;
+      flex: 1;
+    }
+
+    .painel-sgpa { border-right: none; border-bottom: 3px solid var(--verde-campo); }
+
+    header { height: 48px; }
+
+    .header-title { font-size: 13px; }
+
+    .status-pill { font-size: 10px; }
+  }
+
+  /* LEAFLET CUSTOM */
+  .meu-marcador {
+    background: none;
+    border: none;
+  }
+
+  .marcador-eu {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #4285f4;
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 3px rgba(66,133,244,0.35), 0 2px 8px rgba(0,0,0,0.4);
+    position: relative;
+  }
+
+  .marcador-eu::after {
+    content: '';
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(66,133,244,0.18);
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: radar 2s ease-out infinite;
+  }
+
+  @keyframes radar {
+    0% { transform: translate(-50%,-50%) scale(0.4); opacity: 0.8; }
+    100% { transform: translate(-50%,-50%) scale(1.8); opacity: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">🚜</div>
+    <div class="header-title">Rastreador <span>Usina</span></div>
+  </div>
+  <div class="status-bar">
+    <div class="status-pill aguardando" id="status-gps">
+      <div class="dot"></div>
+      <span>Aguardando GPS</span>
+    </div>
+  </div>
+</header>
+
+<!-- ABAS MOBILE -->
+<div class="abas">
+  <button class="aba ativa" onclick="trocarAba('sgpa')">🚜 SGPA (Tratores)</button>
+  <button class="aba" onclick="trocarAba('gps')">📍 Minha Posição</button>
+</div>
+
+<div class="main" id="main">
+
+  <!-- PAINEL SGPA -->
+  <div class="painel painel-sgpa visivel" id="painel-sgpa">
+    <div class="painel-label">
+      <span>🚜 Mapa SGPA — Frotas</span>
+      <span class="badge badge-sgpa">PLATAFORMA</span>
+    </div>
+    <div id="sgpa-container">
+      <div id="sgpa-config">
+        <div class="config-icon">🗺️</div>
+        <div class="config-titulo">Conectar ao mapa do SGPA</div>
+        <div class="config-sub">Cole a URL do mapa de frotas do SGPA para visualizá-lo aqui ao lado da sua posição em tempo real.</div>
+
+        <div class="url-input-wrap">
+          <label>URL do mapa SGPA</label>
+          <input type="url" id="sgpa-url" placeholder="https://sgpa.suausina.com.br/mapa" autocomplete="off" autocorrect="off"/>
+        </div>
+
+        <button class="btn-carregar" onclick="carregarSGPA()">Carregar mapa</button>
+
+        <div class="aviso-iframe">
+          ⚠️ Alguns sistemas bloqueiam o carregamento em iframe por segurança. Se isso acontecer, o painel SGPA abrirá em janela separada — você poderá posicioná-la ao lado desta página manualmente.
+        </div>
+      </div>
+      <iframe id="sgpa-frame" title="Mapa SGPA" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+    </div>
+  </div>
+
+  <!-- DIVISOR REDIMENSIONÁVEL -->
+  <div class="divisor" id="divisor" title="Arraste para redimensionar"></div>
+
+  <!-- PAINEL GPS -->
+  <div class="painel" id="painel-gps">
+    <div class="painel-label">
+      <span>📍 Minha Localização — Tempo Real</span>
+      <span class="badge badge-gps">GPS AO VIVO</span>
+    </div>
+    <div id="mapa"></div>
+    <div class="gps-info">
+      <div class="gps-dado">
+        <div class="gps-dado-label">Latitude</div>
+        <div class="gps-dado-valor" id="val-lat">—</div>
+      </div>
+      <div class="gps-sep"></div>
+      <div class="gps-dado">
+        <div class="gps-dado-label">Longitude</div>
+        <div class="gps-dado-valor" id="val-lon">—</div>
+      </div>
+      <div class="gps-sep"></div>
+      <div class="gps-dado">
+        <div class="gps-dado-label">Precisão</div>
+        <div class="gps-dado-valor destaque" id="val-prec">—</div>
+      </div>
+      <button class="btn-gps" id="btn-seguir" onclick="toggleSeguir()">📍 Centralizar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── ESTADO ──────────────────────────────────────────────
+let mapa, marcadorEu, circuloPrecisao;
+let seguindo = true;
+let watchId = null;
+let abaAtiva = 'sgpa';
+
+// ── MAPA LEAFLET ────────────────────────────────────────
+function iniciarMapa() {
+  mapa = L.map('mapa', {
+    zoom: 16,
+    center: [-20.5, -49.5], // Centro inicial (ajuste para sua região)
+    zoomControl: true,
+    attributionControl: true
+  });
+
+  // Camada satélite (ESRI - ideal para zona rural)
+  const satelite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution: 'Satélite © ESRI', maxZoom: 20 }
+  );
+
+  // Camada OSM padrão
+  const osm = L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap', maxZoom: 19 }
+  );
+
+  // Camada híbrida (satélite + nomes de ruas)
+  const hibrido = L.layerGroup([
+    satelite,
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19,
+      opacity: 0.35
+    })
+  ]);
+
+  satelite.addTo(mapa);
+
+  L.control.layers({
+    '🛰️ Satélite': satelite,
+    '🗺️ Mapa padrão': osm,
+    '🌍 Híbrido': hibrido
+  }).addTo(mapa);
+
+  iniciarGPS();
+}
+
+// ── GPS ─────────────────────────────────────────────────
+function iniciarGPS() {
+  setStatus('localizando', '⏳ Localizando...');
+
+  if (!navigator.geolocation) {
+    setStatus('erro', 'GPS indisponível');
+    return;
+  }
+
+  watchId = navigator.geolocation.watchPosition(
+    onPosicao,
+    onErroGPS,
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 2000
+    }
+  );
+}
+
+function onPosicao(pos) {
+  const { latitude, longitude, accuracy } = pos.coords;
+
+  setStatus('ativo', '🟢 GPS ativo');
+
+  // Atualiza painel
+  document.getElementById('val-lat').textContent = latitude.toFixed(6);
+  document.getElementById('val-lon').textContent = longitude.toFixed(6);
+  document.getElementById('val-prec').textContent =
+    accuracy < 1000 ? Math.round(accuracy) + ' m' : (accuracy / 1000).toFixed(1) + ' km';
+
+  // Ícone personalizado "você está aqui"
+  const icone = L.divIcon({
+    className: 'meu-marcador',
+    html: '<div class="marcador-eu"></div>',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
+  });
+
+  if (!marcadorEu) {
+    marcadorEu = L.marker([latitude, longitude], { icon: icone })
+      .addTo(mapa)
+      .bindPopup('<b>📍 Você está aqui</b>');
+
+    circuloPrecisao = L.circle([latitude, longitude], {
+      radius: accuracy,
+      color: '#4285f4',
+      fillColor: '#4285f4',
+      fillOpacity: 0.08,
+      weight: 1.5,
+      dashArray: '4 4'
+    }).addTo(mapa);
+
+    if (seguindo) mapa.setView([latitude, longitude], 17);
+  } else {
+    marcadorEu.setLatLng([latitude, longitude]);
+    circuloPrecisao.setLatLng([latitude, longitude]);
+    circuloPrecisao.setRadius(accuracy);
+    if (seguindo) mapa.panTo([latitude, longitude]);
+  }
+}
+
+function onErroGPS(err) {
+  const msgs = {
+    1: 'Permissão de GPS negada. Autorize nas configurações do navegador.',
+    2: 'Sinal de GPS fraco na sua área.',
+    3: 'GPS demorou demais. Tentando novamente...'
+  };
+  setStatus('erro', '⚠️ ' + (msgs[err.code] || 'Erro de GPS'));
+
+  if (err.code === 3) setTimeout(iniciarGPS, 3000);
+}
+
+// ── UI ──────────────────────────────────────────────────
+function setStatus(tipo, texto) {
+  const el = document.getElementById('status-gps');
+  el.className = 'status-pill ' + tipo;
+  const dot = el.querySelector('.dot');
+  dot.className = 'dot' + (tipo === 'localizando' || tipo === 'ativo' ? ' pulse' : '');
+  el.querySelector('span').textContent = texto;
+}
+
+function toggleSeguir() {
+  seguindo = !seguindo;
+  const btn = document.getElementById('btn-seguir');
+  btn.classList.toggle('seguindo', seguindo);
+  btn.textContent = seguindo ? '🔒 Seguindo' : '📍 Centralizar';
+
+  if (seguindo && marcadorEu) {
+    mapa.setView(marcadorEu.getLatLng(), mapa.getZoom());
+  }
+}
+
+mapa && mapa.on('dragstart', () => {
+  seguindo = false;
+  document.getElementById('btn-seguir').classList.remove('seguindo');
+  document.getElementById('btn-seguir').textContent = '📍 Centralizar';
+});
+
+// ── SGPA ────────────────────────────────────────────────
+function carregarSGPA() {
+  const url = document.getElementById('sgpa-url').value.trim();
+  if (!url) {
+    alert('Cole a URL do SGPA primeiro.');
+    return;
+  }
+  if (!url.startsWith('http')) {
+    alert('URL inválida. Deve começar com http:// ou https://');
+    return;
+  }
+
+  const frame = document.getElementById('sgpa-frame');
+  const config = document.getElementById('sgpa-config');
+
+  frame.src = url;
+  frame.style.display = 'flex';
+  frame.style.flex = '1';
+  config.style.display = 'none';
+
+  // Salva pra próxima vez
+  try { localStorage.setItem('sgpa_url', url); } catch(e){}
+
+  frame.onerror = () => {
+    // Fallback: abre em nova aba se iframe bloquear
+    frame.style.display = 'none';
+    config.style.display = 'flex';
+    if (confirm('O sistema SGPA bloqueou o carregamento aqui.\n\nDeseja abrir em nova aba para usar lado a lado?')) {
+      window.open(url, 'sgpa-janela', 'width=800,height=700,left=0,top=0');
+    }
+  };
+}
+
+// Restaura URL salva
+try {
+  const salva = localStorage.getItem('sgpa_url');
+  if (salva) {
+    document.getElementById('sgpa-url').value = salva;
+  }
+} catch(e){}
+
+// ── ABAS MOBILE ─────────────────────────────────────────
+function trocarAba(aba) {
+  abaAtiva = aba;
+  const painelSGPA = document.getElementById('painel-sgpa');
+  const painelGPS = document.getElementById('painel-gps');
+  const abas = document.querySelectorAll('.aba');
+
+  if (aba === 'sgpa') {
+    painelSGPA.classList.add('visivel');
+    painelGPS.classList.remove('visivel');
+    abas[0].classList.add('ativa');
+    abas[1].classList.remove('ativa');
+  } else {
+    painelGPS.classList.add('visivel');
+    painelSGPA.classList.remove('visivel');
+    abas[1].classList.add('ativa');
+    abas[0].classList.remove('ativa');
+    // Corrige o tamanho do mapa ao tornar visível
+    setTimeout(() => mapa && mapa.invalidateSize(), 100);
+  }
+}
+
+// ── DIVISOR REDIMENSIONÁVEL ──────────────────────────────
+(function() {
+  const divisor = document.getElementById('divisor');
+  const main = document.getElementById('main');
+  let arrastando = false;
+
+  divisor.addEventListener('mousedown', (e) => {
+    arrastando = true;
+    divisor.classList.add('arrastando');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!arrastando) return;
+    const rect = main.getBoundingClientRect();
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    if (pct < 20 || pct > 80) return;
+    const painelSGPA = document.getElementById('painel-sgpa');
+    const painelGPS = document.getElementById('painel-gps');
+    painelSGPA.style.flex = 'none';
+    painelSGPA.style.width = pct + '%';
+    painelGPS.style.flex = '1';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!arrastando) return;
+    arrastando = false;
+    divisor.classList.remove('arrastando');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    if (mapa) mapa.invalidateSize();
+  });
+
+  // Touch para celular na barra
+  divisor.addEventListener('touchstart', (e) => {
+    arrastando = true;
+    divisor.classList.add('arrastando');
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!arrastando) return;
+    const touch = e.touches[0];
+    const rect = main.getBoundingClientRect();
+    const pct = ((touch.clientX - rect.left) / rect.width) * 100;
+    if (pct < 20 || pct > 80) return;
+    const painelSGPA = document.getElementById('painel-sgpa');
+    const painelGPS = document.getElementById('painel-gps');
+    painelSGPA.style.flex = 'none';
+    painelSGPA.style.width = pct + '%';
+    painelGPS.style.flex = '1';
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    arrastando = false;
+    divisor.classList.remove('arrastando');
+    if (mapa) mapa.invalidateSize();
+  });
+})();
+
+// ── INICIALIZAR ──────────────────────────────────────────
+window.addEventListener('load', () => {
+  iniciarMapa();
+
+  // Corrige mapa ao mudar tamanho de janela
+  window.addEventListener('resize', () => {
+    if (mapa) setTimeout(() => mapa.invalidateSize(), 100);
+  });
+
+  // Arraste do mapa desativa "seguindo"
+  setTimeout(() => {
+    if (mapa) {
+      mapa.on('dragstart', () => {
+        seguindo = false;
+        const btn = document.getElementById('btn-seguir');
+        btn.classList.remove('seguindo');
+        btn.textContent = '📍 Centralizar';
+      });
+    }
+  }, 500);
+});
+</script>
+</body>
+</html>
