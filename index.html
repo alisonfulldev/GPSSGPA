@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Bússola de Frota</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --verde: #2d5a1b;
+    --verde-claro: #4a8c2a;
+    --verde-vivo: #6fcf4a;
+    --amarelo: #f5c518;
+    --laranja: #e8820c;
+    --azul-eu: #4285f4;
+    --vermelho: #e23c3c;
+    --fundo: #14160f;
+    --painel: #1f2218;
+    --card: #2a2e22;
+    --borda: #3a3f30;
+    --texto: #f0ede4;
+    --texto-fraco: #969a85;
+    --ui: 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--ui);
+    background: var(--fundo);
+    color: var(--texto);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--painel);
+    border-bottom: 2px solid var(--verde);
+    padding: 0 14px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 10px;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .marca { display: flex; align-items: center; gap: 9px; }
+  .marca-icon {
+    width: 30px; height: 30px;
+    background: var(--verde);
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+  }
+  .marca-txt { font-size: 14px; font-weight: 800; letter-spacing: 0.02em; }
+  .marca-txt span { color: var(--amarelo); }
+
+  .gps-status {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--borda);
+    color: var(--texto-fraco);
+  }
+  .gps-status.ok { background: rgba(74,140,42,0.15); border-color: rgba(74,140,42,0.4); color: var(--verde-vivo); }
+  .gps-status.erro { background: rgba(226,60,60,0.12); border-color: rgba(226,60,60,0.35); color: #ff7070; }
+  .gps-status .bolinha { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .gps-status.ok .bolinha { animation: pisca 1.4s ease-in-out infinite; }
+  @keyframes pisca { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  /* MAPA */
+  .mapa-wrap { flex: 1; position: relative; overflow: hidden; }
+  #mapa { width: 100%; height: 100%; background: #1a1d14; }
+
+  /* PAINEL DE NAVEGAÇÃO (overlay no topo do mapa) */
+  .nav-hud {
+    position: absolute;
+    top: 12px; left: 12px; right: 12px;
+    z-index: 500;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .alvo-card {
+    background: rgba(31,34,24,0.95);
+    backdrop-filter: blur(8px);
+    border: 1.5px solid var(--amarelo);
+    border-radius: 14px;
+    padding: 12px 14px;
+    pointer-events: auto;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+    display: none;
+  }
+  .alvo-card.ativo { display: block; }
+
+  .alvo-topo {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .alvo-nome {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 800;
+  }
+  .alvo-nome .pin { font-size: 18px; }
+  .alvo-fechar {
+    background: rgba(255,255,255,0.08);
+    border: none; color: var(--texto-fraco);
+    width: 26px; height: 26px; border-radius: 50%;
+    font-size: 15px; cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .alvo-fechar:active { background: rgba(255,255,255,0.16); }
+
+  .alvo-metricas { display: flex; align-items: center; gap: 14px; }
+
+  .seta-dir {
+    width: 64px; height: 64px;
+    flex-shrink: 0;
+    background: var(--verde);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    border: 2px solid var(--verde-claro);
+  }
+  .seta-dir svg { width: 38px; height: 38px; transition: transform 0.3s ease-out; }
+
+  .metricas-txt { flex: 1; }
+  .dist-grande {
+    font-size: 30px; font-weight: 800; line-height: 1;
+    color: var(--amarelo);
+    font-variant-numeric: tabular-nums;
+  }
+  .dist-grande .un { font-size: 15px; color: var(--texto-fraco); font-weight: 700; margin-left: 3px; }
+  .dir-texto { font-size: 12px; color: var(--texto-fraco); margin-top: 4px; font-weight: 600; letter-spacing: 0.03em; }
+  .chegou { color: var(--verde-vivo) !important; }
+
+  /* LISTA DE FROTAS (quando nada selecionado) */
+  .lista-frotas {
+    background: rgba(31,34,24,0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    pointer-events: auto;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+    max-height: 40vh;
+    overflow-y: auto;
+    display: none;
+  }
+  .lista-frotas.ativo { display: block; }
+  .lista-titulo {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--texto-fraco); padding: 10px 14px 6px;
+    position: sticky; top: 0; background: rgba(31,34,24,0.98);
+  }
+  .frota-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--borda);
+    cursor: pointer;
+  }
+  .frota-item:active { background: rgba(255,255,255,0.05); }
+  .frota-cor { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .frota-info { flex: 1; }
+  .frota-label { font-size: 14px; font-weight: 700; }
+  .frota-coords { font-size: 10px; color: var(--texto-fraco); font-family: 'Courier New', monospace; margin-top: 1px; }
+  .frota-dist {
+    font-size: 14px; font-weight: 800; color: var(--amarelo);
+    font-variant-numeric: tabular-nums;
+  }
+  .frota-del {
+    background: none; border: none; color: var(--texto-fraco);
+    font-size: 18px; padding: 0 4px; cursor: pointer; opacity: 0.5;
+  }
+  .frota-del:active { opacity: 1; color: #ff7070; }
+
+  /* BARRA INFERIOR */
+  .barra-inf {
+    background: var(--painel);
+    border-top: 1px solid var(--borda);
+    padding: 10px 12px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .btn {
+    border: none; border-radius: 10px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer; padding: 11px 14px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: transform 0.08s, background 0.15s;
+    letter-spacing: 0.02em;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn-add { background: var(--amarelo); color: #1a1a10; flex: 1; }
+  .btn-add:active { background: #ffd633; }
+  .btn-mapa { background: var(--card); color: var(--texto); border: 1px solid var(--borda); }
+  .btn-centrar { background: var(--verde); color: #fff; }
+  .btn-centrar.seguindo { background: rgba(74,140,42,0.25); border: 1px solid var(--verde-claro); color: var(--verde-vivo); }
+
+  /* MODAL ADICIONAR */
+  .modal-fundo {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0,0,0,0.7);
+    display: none; align-items: flex-end;
+    backdrop-filter: blur(3px);
+  }
+  .modal-fundo.aberto { display: flex; }
+  .modal {
+    background: var(--painel);
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    border-top: 2px solid var(--amarelo);
+    padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+    animation: sobe 0.25s ease-out;
+  }
+  @keyframes sobe { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-titulo { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .modal-sub { font-size: 12px; color: var(--texto-fraco); margin-bottom: 16px; line-height: 1.5; }
+
+  .campo { margin-bottom: 12px; }
+  .campo label {
+    display: block; font-size: 11px; font-weight: 800; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--texto-fraco); margin-bottom: 6px;
+  }
+  .campo input {
+    width: 100%;
+    background: var(--fundo);
+    border: 1.5px solid var(--borda);
+    border-radius: 9px;
+    color: var(--texto); font-size: 15px;
+    padding: 11px 13px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .campo input:focus { border-color: var(--verde-claro); }
+  .campo input::placeholder { color: #5c6150; font-size: 13px; }
+  .campo.coords { display: flex; gap: 8px; }
+  .campo.coords > div { flex: 1; }
+
+  .cola-dica {
+    background: rgba(245,197,24,0.07);
+    border: 1px solid rgba(245,197,24,0.18);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 11px; color: var(--texto-fraco); line-height: 1.5;
+    margin-bottom: 14px;
+  }
+  .cola-dica b { color: var(--amarelo); }
+
+  .modal-btns { display: flex; gap: 8px; margin-top: 4px; }
+  .modal-btns .btn { flex: 1; padding: 13px; }
+  .btn-cancel { background: var(--card); color: var(--texto-fraco); border: 1px solid var(--borda); }
+  .btn-salvar { background: var(--verde); color: #fff; }
+
+  .cor-picker { display: flex; gap: 8px; margin-top: 2px; }
+  .cor-opt {
+    width: 32px; height: 32px; border-radius: 50%;
+    cursor: pointer; border: 2.5px solid transparent;
+    transition: transform 0.1s;
+  }
+  .cor-opt.sel { border-color: #fff; transform: scale(1.12); }
+
+  /* Marcadores Leaflet */
+  .m-eu { background: none; border: none; }
+  .ponto-eu {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--azul-eu); border: 3px solid #fff;
+    box-shadow: 0 0 0 3px rgba(66,133,244,0.3), 0 2px 8px rgba(0,0,0,0.5);
+  }
+  .ponto-eu::after {
+    content:''; position: absolute; top: 50%; left: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(66,133,244,0.15);
+    transform: translate(-50%,-50%);
+    animation: radar 2s ease-out infinite;
+  }
+  @keyframes radar { 0% { transform: translate(-50%,-50%) scale(0.4); opacity:0.7; } 100% { transform: translate(-50%,-50%) scale(2); opacity:0; } }
+
+  .m-trator { background: none; border: none; }
+  .pino-trator {
+    display: flex; flex-direction: column; align-items: center;
+    transform: translateY(-4px);
+  }
+  .pino-bolha {
+    background: var(--cor, #e8820c);
+    width: 34px; height: 34px; border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    border: 2px solid #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pino-bolha span { transform: rotate(45deg); font-size: 16px; }
+
+  .empty-hint {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    text-align: center; pointer-events: none;
+    color: var(--texto-fraco); z-index: 400;
+    display: none;
+  }
+  .empty-hint.show { display: block; }
+  .empty-hint .big { font-size: 40px; margin-bottom: 8px; opacity: 0.5; }
+  .empty-hint .t { font-size: 14px; font-weight: 700; }
+  .empty-hint .s { font-size: 12px; margin-top: 4px; max-width: 220px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="marca">
+    <div class="marca-icon">🚜</div>
+    <div class="marca-txt">Bússola <span>de Frota</span></div>
+  </div>
+  <div class="gps-status" id="gps-status">
+    <div class="bolinha"></div>
+    <span id="gps-status-txt">GPS...</span>
+  </div>
+</header>
+
+<div class="mapa-wrap">
+  <div id="mapa"></div>
+
+  <div class="empty-hint" id="empty-hint">
+    <div class="big">📍</div>
+    <div class="t">Nenhum trator marcado</div>
+    <div class="s">Toque em "+ Trator" e cole a coordenada que aparece no SGPA</div>
+  </div>
+
+  <!-- HUD de navegação -->
+  <div class="nav-hud">
+    <!-- Card do alvo selecionado -->
+    <div class="alvo-card" id="alvo-card">
+      <div class="alvo-topo">
+        <div class="alvo-nome">
+          <span class="pin" id="alvo-pin">🚜</span>
+          <span id="alvo-nome-txt">Trator</span>
+        </div>
+        <button class="alvo-fechar" onclick="deselecionar()">✕</button>
+      </div>
+      <div class="alvo-metricas">
+        <div class="seta-dir" id="seta-wrap">
+          <svg viewBox="0 0 24 24" id="seta-svg" fill="none">
+            <path d="M12 2 L19 21 L12 16 L5 21 Z" fill="#f5c518"/>
+          </svg>
+        </div>
+        <div class="metricas-txt">
+          <div class="dist-grande" id="dist-val">— <span class="un">m</span></div>
+          <div class="dir-texto" id="dir-txt">aguardando GPS...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lista de frotas -->
+    <div class="lista-frotas" id="lista-frotas">
+      <div class="lista-titulo">Tratores marcados — toque para navegar</div>
+      <div id="lista-itens"></div>
+    </div>
+  </div>
+</div>
+
+<div class="barra-inf">
+  <button class="btn btn-add" onclick="abrirModal()">➕ Trator</button>
+  <button class="btn btn-mapa" id="btn-camada" onclick="trocarCamada()">🛰️</button>
+  <button class="btn btn-centrar seguindo" id="btn-centrar" onclick="toggleSeguir()">🎯</button>
+</div>
+
+<!-- MODAL ADICIONAR -->
+<div class="modal-fundo" id="modal-fundo">
+  <div class="modal">
+    <div class="modal-titulo">Marcar trator</div>
+    <div class="modal-sub">Cole as coordenadas que aparecem no SGPA. Aceita formato decimal (ex: -22.538304, -51.502621).</div>
+
+    <div class="cola-dica">
+      💡 <b>Dica:</b> No SGPA, copie a latitude e longitude do trator. Você pode colar tudo junto no campo "Latitude" que eu separo automaticamente.
+    </div>
+
+    <div class="campo">
+      <label>Nome / Frota</label>
+      <input type="text" id="in-nome" placeholder="Ex: Trator 12, Colhedora 3..." autocomplete="off"/>
+    </div>
+
+    <div class="campo coords">
+      <div>
+        <label>Latitude</label>
+        <input type="text" id="in-lat" placeholder="-22.538304" inputmode="decimal" autocomplete="off"/>
+      </div>
+      <div>
+        <label>Longitude</label>
+        <input type="text" id="in-lon" placeholder="-51.502621" inputmode="decimal" autocomplete="off"/>
+      </div>
+    </div>
+
+    <div class="campo">
+      <label>Cor do pino</label>
+      <div class="cor-picker" id="cor-picker">
+        <div class="cor-opt sel" style="background:#e8820c" data-cor="#e8820c"></div>
+        <div class="cor-opt" style="background:#e23c3c" data-cor="#e23c3c"></div>
+        <div class="cor-opt" style="background:#9b59d0" data-cor="#9b59d0"></div>
+        <div class="cor-opt" style="background:#3aa0e2" data-cor="#3aa0e2"></div>
+        <div class="cor-opt" style="background:#f5c518" data-cor="#f5c518"></div>
+      </div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn btn-cancel" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-salvar" onclick="salvarTrator()">Marcar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ───────────────────────────────────────────────
+// ESTADO
+// ───────────────────────────────────────────────
+let mapa, marcadorEu, linhaAlvo;
+let posEu = null;        // {lat, lon, accuracy}
+let heading = null;      // direção que o celular aponta (bússola)
+let tratores = [];       // {id, nome, lat, lon, cor, marker}
+let alvoId = null;       // trator selecionado
+let seguindo = true;
+let corSel = '#e8820c';
+let camadaAtual = 'sat';
+let camadas = {};
+
+const STORAGE_KEY = 'bussola_frota_tratores';
+
+// ───────────────────────────────────────────────
+// MAPA
+// ───────────────────────────────────────────────
+function iniciarMapa() {
+  mapa = L.map('mapa', { zoom: 16, center: [-22.538, -51.502], zoomControl: false });
+  L.control.zoom({ position: 'bottomright' }).addTo(mapa);
+
+  camadas.sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, attribution: 'ESRI' });
+  camadas.ruas = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: 'OSM' });
+
+  camadas.sat.addTo(mapa);
+
+  mapa.on('dragstart', () => setSeguir(false));
+
+  carregarTratores();
+  iniciarGPS();
+  iniciarBussola();
+  atualizarUI();
+}
+
+function trocarCamada() {
+  if (camadaAtual === 'sat') {
+    mapa.removeLayer(camadas.sat); camadas.ruas.addTo(mapa);
+    camadaAtual = 'ruas';
+    document.getElementById('btn-camada').textContent = '🗺️';
+  } else {
+    mapa.removeLayer(camadas.ruas); camadas.sat.addTo(mapa);
+    camadaAtual = 'sat';
+    document.getElementById('btn-camada').textContent = '🛰️';
+  }
+}
+
+// ───────────────────────────────────────────────
+// GPS
+// ───────────────────────────────────────────────
+function iniciarGPS() {
+  setStatus('...', '');
+  if (!navigator.geolocation) { setStatus('erro', 'Sem GPS'); return; }
+  navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 });
+}
+
+function onPos(p) {
+  posEu = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy };
+  setStatus('ok', Math.round(p.coords.accuracy) + 'm');
+
+  const ll = [posEu.lat, posEu.lon];
+  const icone = L.divIcon({ className: 'm-eu', html: '<div class="ponto-eu"></div>', iconSize: [22,22], iconAnchor: [11,11] });
+
+  if (!marcadorEu) {
+    marcadorEu = L.marker(ll, { icon: icone, zIndexOffset: 1000 }).addTo(mapa).bindPopup('<b>📍 Você</b>');
+    if (seguindo) mapa.setView(ll, 17);
+  } else {
+    marcadorEu.setLatLng(ll);
+    if (seguindo) mapa.panTo(ll);
+  }
+  atualizarNavegacao();
+}
+
+function onErr(e) {
+  const m = { 1: 'GPS negado', 2: 'Sem sinal', 3: 'Tentando...' };
+  setStatus('erro', m[e.code] || 'Erro');
+  if (e.code === 3) setTimeout(iniciarGPS, 3000);
+}
+
+function setStatus(tipo, txt) {
+  const el = document.getElementById('gps-status');
+  el.className = 'gps-status' + (tipo === 'ok' ? ' ok' : tipo === 'erro' ? ' erro' : '');
+  document.getElementById('gps-status-txt').textContent = tipo === 'ok' ? 'GPS ' + txt : (txt || 'GPS...');
+}
+
+// ───────────────────────────────────────────────
+// BÚSSOLA (orientação do celular)
+// ───────────────────────────────────────────────
+function iniciarBussola() {
+  function handler(e) {
+    let h = null;
+    if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;       // iOS
+    else if (e.alpha != null) h = 360 - e.alpha;                          // Android
+    if (h != null) { heading = h; atualizarSeta(); }
+  }
+  // iOS pede permissão
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // será solicitado no primeiro toque
+    document.body.addEventListener('click', function pedir() {
+      DeviceOrientationEvent.requestPermission().then(r => {
+        if (r === 'granted') window.addEventListener('deviceorientation', handler, true);
+      }).catch(()=>{});
+      document.body.removeEventListener('click', pedir);
+    }, { once: true });
+  } else {
+    window.addEventListener('deviceorientationabsolute', handler, true);
+    window.addEventListener('deviceorientation', handler, true);
+  }
+}
+
+// ───────────────────────────────────────────────
+// CÁLCULOS GEO
+// ───────────────────────────────────────────────
+function distancia(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function rumo(lat1, lon1, lat2, lon2) {
+  const dLon = (lon2-lon1) * Math.PI/180;
+  const y = Math.sin(dLon) * Math.cos(lat2*Math.PI/180);
+  const x = Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180) - Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
+  return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
+}
+
+function nomeDirecao(g) {
+  const dirs = ['Norte','Nordeste','Leste','Sudeste','Sul','Sudoeste','Oeste','Noroeste'];
+  return dirs[Math.round(g/45) % 8];
+}
+
+function formatDist(m) {
+  if (m < 1000) return { v: Math.round(m), u: 'm' };
+  return { v: (m/1000).toFixed(m < 10000 ? 2 : 1), u: 'km' };
+}
+
+// ───────────────────────────────────────────────
+// NAVEGAÇÃO / HUD
+// ───────────────────────────────────────────────
+function atualizarNavegacao() {
+  // Atualiza distâncias na lista
+  if (alvoId == null) { renderLista(); return; }
+
+  const t = tratores.find(x => x.id === alvoId);
+  if (!t || !posEu) return;
+
+  const d = distancia(posEu.lat, posEu.lon, t.lat, t.lon);
+  const fd = formatDist(d);
+  const r = rumo(posEu.lat, posEu.lon, t.lat, t.lon);
+
+  document.getElementById('dist-val').innerHTML = fd.v + ' <span class="un">' + fd.u + '</span>';
+
+  const distEl = document.getElementById('dist-val');
+  const dirEl = document.getElementById('dir-txt');
+  if (d < 15) {
+    distEl.classList.add('chegou');
+    dirEl.textContent = '✓ Você chegou!';
+    dirEl.classList.add('chegou');
+  } else {
+    distEl.classList.remove('chegou');
+    dirEl.classList.remove('chegou');
+    dirEl.textContent = 'Siga para ' + nomeDirecao(r);
+  }
+
+  // linha entre você e o alvo
+  const pts = [[posEu.lat, posEu.lon], [t.lat, t.lon]];
+  if (!linhaAlvo) {
+    linhaAlvo = L.polyline(pts, { color: t.cor, weight: 3, opacity: 0.8, dashArray: '8 6' }).addTo(mapa);
+  } else {
+    linhaAlvo.setLatLngs(pts);
+    linhaAlvo.setStyle({ color: t.cor });
+  }
+
+  t._rumo = r;
+  atualizarSeta();
+}
+
+function atualizarSeta() {
+  if (alvoId == null) return;
+  const t = tratores.find(x => x.id === alvoId);
+  if (!t || t._rumo == null) return;
+  // seta aponta para o rumo relativo à direção que o celular aponta
+  let ang = t._rumo;
+  if (heading != null) ang = t._rumo - heading;
+  document.getElementById('seta-svg').style.transform = 'rotate(' + ang + 'deg)';
+}
+
+// ───────────────────────────────────────────────
+// SELEÇÃO
+// ───────────────────────────────────────────────
+function selecionar(id) {
+  alvoId = id;
+  const t = tratores.find(x => x.id === id);
+  document.getElementById('alvo-nome-txt').textContent = t.nome;
+  document.getElementById('alvo-card').classList.add('ativo');
+  document.getElementById('lista-frotas').classList.remove('ativo');
+  if (linhaAlvo) { mapa.removeLayer(linhaAlvo); linhaAlvo = null; }
+
+  // enquadra você + alvo
+  if (posEu) {
+    setSeguir(false);
+    const grupo = L.featureGroup([
+      L.marker([posEu.lat, posEu.lon]),
+      L.marker([t.lat, t.lon])
+    ]);
+    mapa.fitBounds(grupo.getBounds(), { padding: [80, 120], maxZoom: 18 });
+  }
+  atualizarNavegacao();
+}
+
+function deselecionar() {
+  alvoId = null;
+  document.getElementById('alvo-card').classList.remove('ativo');
+  if (linhaAlvo) { mapa.removeLayer(linhaAlvo); linhaAlvo = null; }
+  atualizarUI();
+}
+
+// ───────────────────────────────────────────────
+// LISTA
+// ───────────────────────────────────────────────
+function renderLista() {
+  const cont = document.getElementById('lista-itens');
+  cont.innerHTML = '';
+  // ordena por distância
+  const arr = tratores.slice();
+  if (posEu) arr.sort((a,b) => distancia(posEu.lat,posEu.lon,a.lat,a.lon) - distancia(posEu.lat,posEu.lon,b.lat,b.lon));
+
+  arr.forEach(t => {
+    let dtxt = '—';
+    if (posEu) { const fd = formatDist(distancia(posEu.lat,posEu.lon,t.lat,t.lon)); dtxt = fd.v + ' ' + fd.u; }
+    const div = document.createElement('div');
+    div.className = 'frota-item';
+    div.innerHTML = `
+      <div class="frota-cor" style="background:${t.cor}"></div>
+      <div class="frota-info" onclick="selecionar(${t.id})">
+        <div class="frota-label">${t.nome}</div>
+        <div class="frota-coords">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</div>
+      </div>
+      <div class="frota-dist" onclick="selecionar(${t.id})">${dtxt}</div>
+      <button class="frota-del" onclick="removerTrator(${t.id}, event)">🗑️</button>
+    `;
+    cont.appendChild(div);
+  });
+}
+
+function atualizarUI() {
+  const temTratores = tratores.length > 0;
+  document.getElementById('empty-hint').classList.toggle('show', !temTratores);
+  document.getElementById('lista-frotas').classList.toggle('ativo', temTratores && alvoId == null);
+  if (temTratores && alvoId == null) renderLista();
+}
+
+// ───────────────────────────────────────────────
+// CRUD TRATORES
+// ───────────────────────────────────────────────
+function abrirModal() {
+  document.getElementById('modal-fundo').classList.add('aberto');
+  document.getElementById('in-nome').focus();
+}
+function fecharModal() {
+  document.getElementById('modal-fundo').classList.remove('aberto');
+  document.getElementById('in-nome').value = '';
+  document.getElementById('in-lat').value = '';
+  document.getElementById('in-lon').value = '';
+}
+
+// detecta se colaram "lat, lon" junto no campo latitude
+document.addEventListener('DOMContentLoaded', () => {
+  const latIn = document.getElementById('in-lat');
+  latIn.addEventListener('input', () => {
+    const v = latIn.value;
+    // procura dois números separados por vírgula/espaço
+    const m = v.match(/(-?\d+[.,]?\d*)[\s,;]+(-?\d+[.,]?\d*)/);
+    if (m) {
+      latIn.value = m[1].replace(',', '.');
+      document.getElementById('in-lon').value = m[2].replace(',', '.');
+    }
+  });
+
+  // seletor de cor
+  document.querySelectorAll('.cor-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      document.querySelectorAll('.cor-opt').forEach(o => o.classList.remove('sel'));
+      opt.classList.add('sel');
+      corSel = opt.dataset.cor;
+    });
+  });
+});
+
+function salvarTrator() {
+  const nome = document.getElementById('in-nome').value.trim() || ('Trator ' + (tratores.length + 1));
+  let lat = parseFloat(document.getElementById('in-lat').value.replace(',', '.'));
+  let lon = parseFloat(document.getElementById('in-lon').value.replace(',', '.'));
+
+  if (isNaN(lat) || isNaN(lon)) { alert('Coordenadas inválidas. Confira a latitude e longitude.'); return; }
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { alert('Coordenadas fora do intervalo válido. Confira se não inverteu latitude e longitude.'); return; }
+
+  const t = { id: Date.now(), nome, lat, lon, cor: corSel };
+  tratores.push(t);
+  desenharTrator(t);
+  salvarStorage();
+  fecharModal();
+  atualizarUI();
+  selecionar(t.id);
+}
+
+function desenharTrator(t) {
+  const icone = L.divIcon({
+    className: 'm-trator',
+    html: `<div class="pino-trator"><div class="pino-bolha" style="--cor:${t.cor}"><span>🚜</span></div></div>`,
+    iconSize: [34, 42], iconAnchor: [17, 40]
+  });
+  t.marker = L.marker([t.lat, t.lon], { icon: icone }).addTo(mapa).on('click', () => selecionar(t.id));
+}
+
+function removerTrator(id, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tratores.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm('Remover "' + t.nome + '"?')) return;
+  if (t.marker) mapa.removeLayer(t.marker);
+  tratores = tratores.filter(x => x.id !== id);
+  if (alvoId === id) deselecionar();
+  salvarStorage();
+  atualizarUI();
+}
+
+// ───────────────────────────────────────────────
+// PERSISTÊNCIA (localStorage)
+// ───────────────────────────────────────────────
+function salvarStorage() {
+  try {
+    const dados = tratores.map(t => ({ id: t.id, nome: t.nome, lat: t.lat, lon: t.lon, cor: t.cor }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
+  } catch(e) {}
+}
+function carregarTratores() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    JSON.parse(raw).forEach(d => { tratores.push(d); desenharTrator(d); });
+  } catch(e) {}
+}
+
+// ───────────────────────────────────────────────
+// SEGUIR / CENTRAR
+// ───────────────────────────────────────────────
+function setSeguir(v) {
+  seguindo = v;
+  document.getElementById('btn-centrar').classList.toggle('seguindo', v);
+}
+function toggleSeguir() {
+  setSeguir(!seguindo);
+  if (seguindo && posEu) mapa.setView([posEu.lat, posEu.lon], Math.max(mapa.getZoom(), 17));
+}
+
+// ───────────────────────────────────────────────
+window.addEventListener('load', iniciarMapa);
+window.addEventListener('resize', () => setTimeout(() => mapa && mapa.invalidateSize(), 100));
+</script>
+</body>
+</html>
